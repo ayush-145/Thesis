@@ -1,0 +1,13 @@
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+Diabetic Retinopathy (DR) is a progressive microvascular complication of diabetes and a leading cause of preventable blindness worldwide. Early detection of DR severity is critical, yet manual grading is labour-intensive and subjective. This thesis investigates automated DR severity classification from fundus photographs using deep learning, focusing on ordinal regression to explicitly model the progressive nature of the disease.
+
+We present a comparative study of three diverse architectures: (i)~EfficientNetV2-S (a CNN), (ii)~Swin Transformer V2-Tiny, and (iii)~RETFound (a foundation model adapted via LoRA). These models are evaluated within a unified framework that includes Ben Graham preprocessing, a hybrid Conditional Ordinal Regression (CORN) and Ordinal Focal Loss, and stratified five-fold cross-validation on the APTOS 2019 dataset.
+
+By decomposing the five-class grading problem into conditional binary tasks, the ordinal framework inherently encodes clinical severity and aligns optimisation with the Quadratic Weighted Kappa (QWK) metric. All models achieve strong agreement with expert annotations: EfficientNetV2-S ($0.9116 \pm 0.0076$), Swin-V2-Tiny ($0.9074 \pm 0.0051$), and RETFound ($0.9163 \pm 0.0077$). A heterogeneous late-fusion ensemble further improves performance to a mean QWK of $\mathbf{0.9178 \pm 0.0060}$.
+
+Our results demonstrate that domain-specific foundation models, even with minimal trainable parameters, can outperform fully fine-tuned architectures. Furthermore, the ensemble's success confirms that CNNs, transformers, and foundation models capture complementary features. This work contributes a reproducible, clinically motivated framework for ordinal DR grading and offers insights into modern medical image classification paradigms.
+
+\vspace{0.5cm}
+\noindent\textbf{Keywords:} Diabetic Retinopathy, Ordinal Regression, CORN Loss, Deep Learning, EfficientNetV2, Swin Transformer, RETFound, Foundation Models, LoRA, Ensemble Learning, Quadratic Weighted Kappa.

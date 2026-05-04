@@ -1,0 +1,304 @@
+\chapter{Methodology}
+\label{ch:methodology}
+
+This chapter presents the technical methodology underlying the three deep learning architectures, the ordinal regression loss formulation, and the ensemble fusion strategy. Each model shares a common CORN ordinal classification head and hybrid loss function but differs fundamentally in its feature extraction backbone, representing the CNN, transformer, and foundation model paradigms respectively.
+
+
+\section{CORN Ordinal Label Encoding and Decoding}
+\label{sec:corn_encoding}
+
+Central to the ordinal regression framework employed in this thesis is the encoding of the five-level DR severity grade into a binary ordinal representation compatible with the Conditional Ordinal Regression (CORN) framework \cite{shi2021corn}.
+
+\subsection{Label Encoding}
+
+For $K = 5$ ordinal classes, CORN defines $K - 1 = 4$ binary classification tasks. Each task $k \in \{0, 1, 2, 3\}$ answers the question: \emph{``Is the DR severity strictly greater than rank $k$?''} Given a true grade $y \in \{0, 1, 2, 3, 4\}$, the binary ordinal target vector $\mathbf{c} \in \{0, 1\}^{4}$ is constructed as:
+\begin{equation}
+    c_k = \mathbb{1}[y > k], \quad k \in \{0, 1, 2, 3\}
+    \label{eq:corn_encode}
+\end{equation}
+
+This encoding produces monotonically non-increasing binary vectors. For example:
+\begin{align*}
+    \text{Grade } 0 &\rightarrow [0, 0, 0, 0] \\
+    \text{Grade } 1 &\rightarrow [1, 0, 0, 0] \\
+    \text{Grade } 2 &\rightarrow [1, 1, 0, 0] \\
+    \text{Grade } 3 &\rightarrow [1, 1, 1, 0] \\
+    \text{Grade } 4 &\rightarrow [1, 1, 1, 1]
+\end{align*}
+
+\subsection{Prediction Decoding}
+
+At inference time, the model outputs $K - 1 = 4$ logits. The predicted grade is obtained by applying the sigmoid function to each logit, thresholding at 0.5, and counting the number of consecutive positive predictions:
+\begin{equation}
+    \hat{y} = \sum_{k=0}^{K-2} \mathbb{1}\left[\sigma(z_k) > 0.5\right]
+    \label{eq:corn_decode}
+\end{equation}
+where $z_k$ is the $k$-th logit and $\sigma(\cdot)$ is the sigmoid function. This decoding naturally produces integer predictions in $\{0, 1, \ldots, K-1\}$.
+
+\subsection{Probability Conversion}
+
+For ensemble fusion (Section~\ref{sec:ensemble_method}), the ordinal logits must be converted to $K$-class probability distributions. Defining $\hat{p}_k = \sigma(z_k)$ as the estimated cumulative exceedance probability for rank $k$, the class probabilities are computed as:
+\begin{equation}
+    P(Y = j) = \begin{cases}
+        1 - \hat{p}_0 & \text{if } j = 0 \\
+        \hat{p}_{j-1} - \hat{p}_j & \text{if } 1 \leq j \leq K-2 \\
+        \hat{p}_{K-2} & \text{if } j = K-1
+    \end{cases}
+    \label{eq:corn_probs}
+\end{equation}
+These probabilities are clipped to $[0, 1]$ and renormalised to ensure a valid probability distribution.
+
+\section{Model A: EfficientNetV2-S}
+\label{sec:model_a}
+
+\subsection{Architecture Overview}
+
+EfficientNetV2-S \cite{tan2021efficientnetv2} serves as the CNN baseline in our ablation study, representing the state of the art in efficient convolutional architecture design. It belongs to the EfficientNetV2 family, which improves upon the original EfficientNet \cite{tan2019efficientnet} through three key innovations: (i)~the introduction of Fused-MBConv blocks in early stages, (ii)~progressive learning during training, and (iii)~a refined Neural Architecture Search (NAS) procedure that jointly optimises accuracy and training speed.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{arch_efficientnetv2.jpeg}
+    \caption{Architecture of EfficientNetV2-S. The network consists of a sequence of MBConv and Fused-MBConv stages with progressive channel expansion, followed by global average pooling.}
+    \label{fig:efficientnetv2_arch}
+\end{figure}
+
+\subsection{Building Blocks}
+
+The EfficientNetV2-S architecture employs two types of inverted residual blocks:
+
+\textbf{Fused-MBConv} blocks, used in the early stages (Stages 1--3), replace the depthwise separable convolution with a single fused $3 \times 3$ convolution for both spatial and channel mixing. This design improves hardware utilisation on modern accelerators (GPUs/TPUs) where memory access costs dominate over computation for depthwise convolutions. The Fused-MBConv operation for input $\mathbf{X}$ can be expressed as:
+\begin{equation}
+    \mathbf{Y} = \text{SE}\left(\text{BN}\left(\text{GELU}\left(\text{Conv}_{3\times3}^{e \cdot c}(\mathbf{X})\right)\right)\right) + \mathbf{X}
+\end{equation}
+where $c$ is the input channel count, $e$ is the expansion ratio, $\text{BN}$ denotes batch normalisation, and $\text{SE}$ denotes the squeeze-and-excitation block \cite{hu2018squeeze}.
+
+\textbf{MBConv} blocks \cite{sandler2018mobilenetv2}, used in the later stages (Stages 4--7), employ the standard depthwise separable convolution:
+\begin{equation}
+    \mathbf{Y} = \text{SE}\left(\text{BN}\left(\text{DWConv}_{3\times3}\left(\text{BN}\left(\text{GELU}\left(\text{Conv}_{1\times1}^{e \cdot c}(\mathbf{X})\right)\right)\right)\right)\right) + \mathbf{X}
+\end{equation}
+where $\text{DWConv}$ is a depthwise convolution that applies a single filter per input channel, reducing computation by a factor of $c$ compared to standard convolutions.
+
+\subsection{Classification Head}
+
+The convolutional feature maps from the final stage are reduced to a 1280-dimensional feature vector via global average pooling. This vector is passed through a CORN ordinal head consisting of:
+\begin{equation}
+    \hat{\mathbf{z}} = \mathbf{W}_{\text{corn}} \cdot \text{Dropout}\left(\text{LayerNorm}(\mathbf{f})\right) + \mathbf{b}_{\text{corn}}
+\end{equation}
+where $\mathbf{f} \in \mathbb{R}^{1280}$ is the pooled feature vector, $\mathbf{W}_{\text{corn}} \in \mathbb{R}^{4 \times 1280}$, and the output $\hat{\mathbf{z}} \in \mathbb{R}^{4}$ represents the four ordinal logits. LayerNorm is applied before the linear projection to stabilise the feature magnitudes, and dropout ($p = 0.15$) provides regularisation.
+
+\section{Model B: Swin Transformer V2-Tiny}
+\label{sec:model_b}
+
+\subsection{Architecture Overview}
+
+The Swin Transformer V2-Tiny \cite{liu2022swinv2} represents the hierarchical vision transformer paradigm in our study. Unlike the CNN baseline that builds representations through local convolutions, the Swin Transformer captures global spatial dependencies through self-attention while maintaining computational efficiency via the shifted window mechanism.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{arch_swinv2.jpg}
+    \caption{Architecture of Swin Transformer V2. The model processes images through four hierarchical stages with progressive spatial downsampling and channel expansion. Within each stage, attention is computed within local windows that alternate between regular and shifted configurations.}
+    \label{fig:swinv2_arch}
+\end{figure}
+
+\subsection{Shifted Window Self-Attention}
+
+The core innovation of the Swin Transformer is the restriction of self-attention computation to non-overlapping local windows of size $M \times M$ (with $M = 8$ in our configuration). For an input feature map of spatial resolution $H \times W$, standard global self-attention has complexity $\mathcal{O}(H^2W^2)$, while window-based attention reduces this to $\mathcal{O}(HWM^2)$---linear in image size.
+
+To enable cross-window information exchange, successive Transformer layers alternate between two windowing configurations. In odd-numbered layers, the windows are regularly partitioned; in even-numbered layers, the window grid is shifted by $(\lfloor M/2 \rfloor, \lfloor M/2 \rfloor)$ pixels, causing each shifted window to overlap with four regular windows from the previous layer. This shifted configuration is implemented efficiently using cyclic shifting and attention masking, avoiding any actual data movement.
+
+The attention computation within each window follows the scaled dot-product formulation. In Swin-V2, the standard dot-product attention is replaced with \emph{scaled cosine attention}:
+\begin{equation}
+    \text{Attention}(\mathbf{Q}, \mathbf{K}, \mathbf{V}) = \text{softmax}\left(\frac{\cos(\mathbf{Q}, \mathbf{K})}{\tau} + \mathbf{B}\right)\mathbf{V}
+    \label{eq:cosine_attention}
+\end{equation}
+where $\tau$ is a learnable temperature parameter and $\mathbf{B}$ is a relative position bias generated by a log-spaced continuous position bias (Log-CPB) MLP.
+
+\subsection{Hierarchical Feature Maps}
+
+The Swin-V2-Tiny architecture comprises four stages, with patch merging layers between them that halve the spatial resolution while doubling the channel dimension:
+
+\begin{itemize}
+    \item \textbf{Stage 1:} Patch embedding ($4 \times 4$ patches, $C = 96$) followed by 2 Transformer blocks.
+    \item \textbf{Stage 2:} Patch merging ($2\times$ downsample, $2C = 192$) followed by 2 Transformer blocks.
+    \item \textbf{Stage 3:} Patch merging ($2\times$ downsample, $4C = 384$) followed by 6 Transformer blocks.
+    \item \textbf{Stage 4:} Patch merging ($2\times$ downsample, $8C = 768$) followed by 2 Transformer blocks.
+\end{itemize}
+
+The output of Stage~4 is a $768$-dimensional feature vector obtained via LayerNorm followed by adaptive average pooling. This feature vector is passed through the same CORN ordinal head architecture described in Section~\ref{sec:model_a}, with dropout $p = 0.20$ (increased for the transformer due to its higher overfitting tendency on small datasets).
+
+\section{Model D: RETFound with LoRA}
+\label{sec:model_d}
+
+\subsection{Architecture Overview}
+
+RETFound \cite{zhou2023retfound} is a Vision Transformer Large (ViT-L/16) pretrained on 1.6 million colour fundus photographs from the Moorfields Eye Hospital via Masked Autoencoding (MAE) \cite{he2022masked}. It operates on $224 \times 224$ images, dividing each image into a grid of $14 \times 14 = 196$ non-overlapping patches of size $16 \times 16$ pixels. Each patch is linearly projected to a 1024-dimensional embedding, and a learnable \texttt{[CLS]} token is prepended, yielding a sequence of 197 tokens.
+
+The encoder consists of 24 Transformer blocks, each containing multi-head self-attention (16 heads, head dimension 64) and an MLP with GELU activation and expansion ratio 4. Learnable absolute position embeddings are added to the patch sequence. The \texttt{[CLS]} token output from the final block serves as the global image representation.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{arch_Retfound.png}
+    \caption{Architecture overview of RETFound, a Vision Transformer (ViT-Large) foundation model pretrained via Masked Autoencoding on 1.6 million retinal images.}
+    \label{fig:retfound_arch}
+\end{figure}
+
+\subsection{LoRA Injection Strategy}
+
+Rather than fine-tuning the full 307 million parameters of RETFound (which risks catastrophic forgetting and exceeds the VRAM capacity of consumer GPUs), we freeze all pretrained backbone weights and inject LoRA adapters \cite{hu2022lora} into the self-attention layers of every Transformer block.
+
+For each target linear layer $\mathbf{W}_0 \in \mathbb{R}^{d_{\text{out}} \times d_{\text{in}}}$, the LoRA modification is:
+\begin{equation}
+    \mathbf{h} = \mathbf{W}_0 \mathbf{x} + \frac{\alpha}{r} \cdot \mathbf{B}\mathbf{A}\mathbf{x}
+    \label{eq:lora_forward}
+\end{equation}
+where $\mathbf{A} \in \mathbb{R}^{r \times d_{\text{in}}}$ and $\mathbf{B} \in \mathbb{R}^{d_{\text{out}} \times r}$ are the low-rank trainable matrices, $r = 8$ is the adaptation rank, and $\alpha = 16$ is the scaling factor. The matrix $\mathbf{A}$ is initialised with Kaiming uniform initialisation and $\mathbf{B}$ is initialised to zero, ensuring that the LoRA contribution is zero at the start of training and the model begins from the pretrained state.
+
+LoRA is injected into two target modules per Transformer block:
+\begin{enumerate}
+    \item The \textbf{QKV projection} ($\mathbf{W}_{\text{qkv}} \in \mathbb{R}^{3072 \times 1024}$): a fused linear layer that jointly computes the query, key, and value projections for all attention heads.
+    \item The \textbf{output projection} ($\mathbf{W}_{\text{proj}} \in \mathbb{R}^{1024 \times 1024}$): the linear layer that projects the concatenated multi-head attention output back to the embedding dimension.
+\end{enumerate}
+
+With 24 Transformer blocks $\times$ 2 LoRA modules per block $= 48$ LoRA layers, and each LoRA layer introducing $r \times (d_{\text{in}} + d_{\text{out}})$ parameters, the total trainable parameter count is approximately 1.2 million out of 307 million ($\sim$0.4\%). The CORN classification head adds an additional $\sim$4,100 trainable parameters.
+
+A LoRA dropout of $p = 0.05$ is applied to the input $\mathbf{x}$ before the low-rank projection to regularise the adaptation and reduce overfitting on the small APTOS dataset.
+
+\subsection{Gradient Checkpointing}
+
+To accommodate the ViT-Large backbone within the 16~GB VRAM constraint of NVIDIA T4 GPUs, we employ gradient checkpointing \cite{chen2016training} during training. Rather than storing the activations of all 24 Transformer blocks for the backward pass, gradient checkpointing stores activations only at designated checkpoints and recomputes intermediate activations during backpropagation. This trades a moderate increase in computation time ($\sim$30\%) for a substantial reduction in peak memory usage, enabling training with batch size 4 on a single T4 GPU.
+
+\section{Hybrid Ordinal Loss Function}
+\label{sec:loss_function}
+
+A key contribution of this thesis is the design of a hybrid loss function that combines the ordinal consistency of CORN with the class-imbalance handling of Focal Loss. The total loss is defined as:
+\begin{equation}
+    \mathcal{L}_{\text{total}} = \alpha \cdot \mathcal{L}_{\text{CORN}} + (1 - \alpha) \cdot \mathcal{L}_{\text{Focal}}
+    \label{eq:hybrid_loss}
+\end{equation}
+where $\alpha = 0.7$ balances the two components, placing primary emphasis on ordinal consistency while retaining the benefits of focal down-weighting.
+
+\subsection{CORN Loss}
+\label{sec:corn_loss}
+
+The CORN loss \cite{shi2021corn} achieves rank consistency through conditional training. For each rank $k \in \{0, 1, \ldots, K-2\}$, a binary cross-entropy loss is computed \emph{only on the conditional subset of samples where the true grade $y \geq k$}:
+\begin{equation}
+    \mathcal{L}_{\text{CORN}} = \frac{1}{|\mathcal{K}|} \sum_{k \in \mathcal{K}} \frac{1}{|\mathcal{S}_k|} \sum_{i \in \mathcal{S}_k} \text{BCE}\left(z_k^{(i)}, \, \mathbb{1}[y^{(i)} > k]\right)
+    \label{eq:corn_loss}
+\end{equation}
+where $\mathcal{S}_k = \{i : y^{(i)} \geq k\}$ is the conditional training set for task $k$, $\mathcal{K}$ is the set of ranks with non-empty conditional sets, $z_k^{(i)}$ is the $k$-th logit for sample $i$, and $\text{BCE}$ is the binary cross-entropy:
+\begin{equation}
+    \text{BCE}(z, t) = -\left[t \log \sigma(z) + (1-t) \log(1 - \sigma(z))\right]
+\end{equation}
+
+The conditioning ensures that task $k$ learns the probability $P(Y > k \mid Y \geq k)$ rather than $P(Y > k)$. By the chain rule of probability, the cumulative probabilities $P(Y > k) = \prod_{j=0}^{k} P(Y > j \mid Y \geq j)$ are guaranteed to be monotonically non-increasing, ensuring rank-consistent predictions without requiring the weight-sharing constraint of CORAL.
+
+\subsection{Ordinal Focal Loss}
+\label{sec:focal_loss}
+
+The Ordinal Focal Loss extends the standard Focal Loss \cite{lin2017focal} to the ordinal binary structure of CORN. Applied across all $K-1$ binary tasks simultaneously, it down-weights well-classified ordinal transitions and focuses learning on the difficult boundary grades:
+\begin{equation}
+    \mathcal{L}_{\text{Focal}} = \frac{1}{B \cdot (K-1)} \sum_{i=1}^{B} \sum_{k=0}^{K-2} -\alpha_t^{(i,k)} \left(1 - p_t^{(i,k)}\right)^\gamma \log\left(p_t^{(i,k)}\right)
+    \label{eq:focal_loss}
+\end{equation}
+where $B$ is the batch size, $p_t^{(i,k)}$ is the predicted probability for the correct binary outcome at rank $k$:
+\begin{equation}
+    p_t^{(i,k)} = c_k^{(i)} \cdot \sigma(z_k^{(i)}) + (1 - c_k^{(i)}) \cdot (1 - \sigma(z_k^{(i)}))
+\end{equation}
+$\gamma = 2.0$ is the focusing parameter that controls the rate of down-weighting for easy examples, and $\alpha_t^{(i,k)}$ is a class-balancing factor ($\alpha = 0.25$ for positive, $1 - \alpha = 0.75$ for negative outcomes).
+
+\subsection{Rationale for the Hybrid Formulation}
+
+The two loss components serve complementary purposes. CORN loss ensures that the model's ordinal predictions are rank-consistent and that the training objective is aligned with the QWK evaluation metric, which penalises misclassifications proportionally to the squared distance between predicted and true grades. The Ordinal Focal Loss addresses the class imbalance by reducing the contribution of well-classified (easy) ordinal transitions, directing the model's capacity towards the challenging boundary cases (e.g., distinguishing Grade~1 from Grade~2). The weight $\alpha = 0.7$ reflects the higher priority placed on ordinal consistency.
+
+\section{Quadratic Weighted Kappa}
+\label{sec:qwk}
+
+The Quadratic Weighted Kappa (QWK) \cite{cohen1968weighted} is adopted as the primary evaluation metric, consistent with the APTOS 2019 competition and clinical DR grading practice. QWK measures the agreement between the predicted grades $\hat{y}$ and the true grades $y$, adjusted for agreement expected by chance, with a quadratic weighting scheme that penalises large disagreements more heavily.
+
+Given the confusion matrix $\mathbf{O}$ (observed) and the expected matrix $\mathbf{E}$ (under random agreement), the QWK is defined as:
+\begin{equation}
+    \kappa_w = 1 - \frac{\sum_{i,j} w_{ij} \cdot O_{ij}}{\sum_{i,j} w_{ij} \cdot E_{ij}}
+    \label{eq:qwk}
+\end{equation}
+where the quadratic weight matrix is:
+\begin{equation}
+    w_{ij} = \frac{(i - j)^2}{(K - 1)^2}
+    \label{eq:qwk_weights}
+\end{equation}
+
+QWK ranges from $-1$ (complete disagreement) through $0$ (chance agreement) to $+1$ (perfect agreement). Values above 0.80 are generally considered ``almost perfect agreement'' in clinical contexts. The quadratic weighting makes QWK particularly appropriate for ordinal classification because it imposes zero penalty for correct predictions, mild penalty for off-by-one errors, and severe penalty for distant misclassifications---directly mirroring the clinical severity of grading errors.
+
+\section{Heterogeneous Late-Fusion Ensemble}
+\label{sec:ensemble_method}
+
+The three trained models produce different feature representations that capture complementary aspects of retinal pathology. To exploit this complementarity, we employ a heterogeneous late-fusion ensemble that combines the class probability distributions from all three models through optimised weighted averaging.
+
+\begin{figure}[htbp]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        node distance=0.8cm and 1.2cm,
+        auto,
+        box/.style={rectangle, draw, fill=white, text width=2.8cm, text centered, minimum height=1.2cm, rounded corners=3pt, font=\small},
+        modelbox/.style={rectangle, draw, fill=blue!10, text width=3cm, text centered, minimum height=1.2cm, rounded corners=3pt, font=\small\bfseries},
+        cornbox/.style={rectangle, draw, fill=orange!15, text width=2.8cm, text centered, minimum height=1.2cm, rounded corners=3pt, font=\small},
+        fusionbox/.style={rectangle, draw, fill=green!15, text width=3cm, text centered, minimum height=1.2cm, rounded corners=3pt, font=\small\bfseries},
+        arrow/.style={-{Stealth[length=3mm]}, thick}
+    ]
+        % Nodes
+        \node[box] (input) {Raw Fundus Image};
+        \node[box, right=of input] (preprocess) {Ben Graham Preprocessing};
+        
+        \node[modelbox, right=of preprocess, yshift=2.5cm] (modelA) {Model A\\EfficientNetV2-S};
+        \node[modelbox, right=of preprocess] (modelB) {Model B\\Swin-V2-Tiny};
+        \node[modelbox, right=of preprocess, yshift=-2.5cm] (modelD) {Model D\\RETFound + LoRA};
+        
+        \node[cornbox, right=of modelA] (cornA) {CORN Head\\(4 Logits)};
+        \node[cornbox, right=of modelB] (cornB) {CORN Head\\(4 Logits)};
+        \node[cornbox, right=of modelD] (cornD) {CORN Head\\(4 Logits)};
+        
+        \node[box, right=of cornA] (probA) {Probabilities\\$\mathbf{p}_A \in \mathbb{R}^5$};
+        \node[box, right=of cornB] (probB) {Probabilities\\$\mathbf{p}_B \in \mathbb{R}^5$};
+        \node[box, right=of cornD] (probD) {Probabilities\\$\mathbf{p}_D \in \mathbb{R}^5$};
+        
+        \node[fusionbox, right=of probB] (fusion) {Heterogeneous Late-Fusion\\(Weighted Avg)};
+        
+        \node[box, fill=red!10, right=of fusion] (output) {Final DR Grade\\$\hat{y} \in \{0,1,2,3,4\}$};
+        
+        % Arrows
+        \draw[arrow] (input) -- (preprocess);
+        \draw[arrow] (preprocess.east) -- ++(0.6,0) |- (modelA.west);
+        \draw[arrow] (preprocess.east) -- (modelB.west);
+        \draw[arrow] (preprocess.east) -- ++(0.6,0) |- (modelD.west);
+        
+        \draw[arrow] (modelA) -- (cornA);
+        \draw[arrow] (modelB) -- (cornB);
+        \draw[arrow] (modelD) -- (cornD);
+        
+        \draw[arrow] (cornA) -- (probA);
+        \draw[arrow] (cornB) -- (probB);
+        \draw[arrow] (cornD) -- (probD);
+        
+        \draw[arrow] (probA.east) -- ++(0.6,0) |- (fusion.west);
+        \draw[arrow] (probB.east) -- (fusion.west);
+        \draw[arrow] (probD.east) -- ++(0.6,0) |- (fusion.west);
+        
+        \draw[arrow] (fusion) -- (output);
+        
+    \end{tikzpicture}%
+    }
+    \caption{End-to-end methodology pipeline. Raw fundus images undergo Ben Graham preprocessing before being passed to three distinct architectures (CNN, Transformer, Foundation Model). Each model features a Conditional Ordinal Regression (CORN) head. The resulting logits are converted to class probabilities and fused via a weighted average to produce the final DR severity grade.}
+    \label{fig:overall_pipeline}
+\end{figure}
+\subsection{Fusion Strategy}
+
+For each validation fold, the CORN logits from each model are first converted to $K$-class probability distributions using Equation~\ref{eq:corn_probs}. The fused probability distribution is then computed as:
+\begin{equation}
+    \mathbf{p}_{\text{ens}} = \sum_{m=1}^{M} w_m \cdot \mathbf{p}_m, \quad \text{subject to} \quad \sum_{m=1}^{M} w_m = 1, \quad w_m \geq 0
+    \label{eq:ensemble_fusion}
+\end{equation}
+where $M = 3$ is the number of models, $\mathbf{p}_m \in \mathbb{R}^K$ is the probability vector from model $m$, and $w_m$ is the fusion weight for model $m$.
+
+\subsection{Weight Optimisation}
+
+The fusion weights are optimised per fold via grid search to maximise the QWK on the validation set. For three models, we use a pair-wise iterative optimisation strategy with 21 grid steps per dimension, evaluating all feasible weight combinations that satisfy the simplex constraint. This procedure independently selects the optimal weight configuration for each fold, allowing the ensemble to adapt to fold-specific model strengths.

@@ -1,0 +1,89 @@
+\chapter{Literature Review}
+\label{ch:literature}
+
+This chapter surveys the existing body of research relevant to the automated classification of diabetic retinopathy from retinal fundus photographs. The review is organised thematically, progressing from early handcrafted feature methods through deep convolutional approaches, modern vision transformers, and the recent emergence of foundation models for ophthalmology. Particular attention is devoted to ordinal regression techniques and ensemble strategies, as these form the methodological core of this thesis.
+
+\section{Traditional and Early Machine Learning Approaches}
+\label{sec:traditional_ml}
+
+Prior to the deep learning era, automated DR detection relied on handcrafted feature extraction pipelines. These systems typically operated in three stages: (i)~preprocessing to enhance image quality and normalise illumination; (ii)~lesion segmentation using morphological operations, matched filters, or region growing to detect microaneurysms, haemorrhages, and exudates; and (iii)~classification using conventional machine learning algorithms such as Support Vector Machines (SVMs), Random Forests, or $k$-Nearest Neighbours.
+
+While these approaches achieved modest accuracy on constrained datasets, they suffered from fundamental limitations. The handcrafted features were brittle to variations in imaging equipment, patient demographics, and image quality. Moreover, the multi-stage pipeline introduced cascading errors: inaccurate lesion segmentation directly degraded downstream classification performance. These limitations motivated the shift towards end-to-end deep learning approaches that learn discriminative features directly from raw pixel data.
+
+\section{Convolutional Neural Networks for DR Classification}
+\label{sec:cnn_dr}
+
+The application of deep CNNs to DR classification was catalysed by two landmark studies. Gulshan et al. \cite{gulshan2016development} trained an Inception-V3 network on 128,175 retinal images and demonstrated performance exceeding that of ophthalmologists for binary referable-DR detection, achieving an AUC of 0.991 on the EyePACS-1 dataset. Concurrently, Ting et al. \cite{ting2017development} validated a similar approach across multiethnic populations in Singapore, achieving an AUC of 0.936 for referable DR. These studies established the clinical viability of deep learning for DR screening.
+
+Subsequent work explored increasingly sophisticated CNN architectures. ResNet \cite{he2016deep} introduced skip connections that enabled training of very deep networks (up to 152 layers) without degradation, and became a widely adopted backbone for DR classification. The EfficientNet family \cite{tan2019efficientnet} introduced compound scaling---jointly optimising network depth, width, and input resolution---to achieve superior accuracy-efficiency trade-offs. EfficientNetV2 \cite{tan2021efficientnetv2} further improved training speed through progressive learning and the introduction of Fused-MBConv blocks, which replace the depthwise separable convolutions in early stages with conventional convolutions for improved hardware utilisation.
+
+\subsection{Squeeze-and-Excitation and Attention Mechanisms in CNNs}
+
+A notable development within CNN architectures has been the incorporation of channel-wise attention through Squeeze-and-Excitation (SE) blocks \cite{hu2018squeeze}. By globally pooling feature maps and learning channel-wise recalibration weights, SE blocks enable the network to emphasise informative channels and suppress less relevant ones. Both EfficientNet and EfficientNetV2 incorporate SE blocks within their MBConv building blocks, which contributes to their strong performance on fine-grained classification tasks where subtle textural differences (e.g., microaneurysms versus dot haemorrhages) are diagnostically significant.
+
+\section{Vision Transformers for Medical Image Analysis}
+\label{sec:vit_medical}
+
+The introduction of the Vision Transformer (ViT) by Dosovitskiy et al. \cite{dosovitskiy2021image} marked a paradigm shift in computer vision. By treating an image as a sequence of non-overlapping patches and processing them with a standard Transformer encoder \cite{vaswani2017attention}, ViT demonstrated that pure self-attention architectures could achieve competitive or superior performance to CNNs on large-scale image classification benchmarks.
+
+However, the original ViT suffered from two significant limitations for medical imaging applications. First, its quadratic computational complexity with respect to the number of patches ($\mathcal{O}(N^2)$, where $N$ is the sequence length) limited its applicability to high-resolution medical images. Second, its lack of inductive biases (e.g., translation equivariance, locality) present in CNNs made it data-hungry, requiring pretraining on hundreds of millions of images (JFT-300M) to outperform CNNs.
+
+\subsection{Swin Transformer: Hierarchical Vision Transformers}
+
+The Swin Transformer \cite{liu2021swin} addressed both limitations through two key innovations. First, it introduced \emph{shifted window self-attention}, which restricts the computation of self-attention to local, non-overlapping windows of fixed size, reducing the computational complexity from $\mathcal{O}(N^2)$ to $\mathcal{O}(N)$ with respect to image size. By alternating between regular and shifted window configurations across successive layers, the Swin Transformer enables cross-window information exchange while maintaining linear complexity. Second, it adopted a hierarchical architecture with progressive downsampling (patch merging), producing multi-scale feature maps analogous to those of CNNs, making it suitable for dense prediction tasks.
+
+Swin Transformer V2 \cite{liu2022swinv2} introduced further refinements critical for scaling: (i)~\emph{post-normalisation}, which moves the LayerNorm \cite{ba2016layer} operation from before to after the attention and MLP layers to improve training stability at scale; (ii)~\emph{scaled cosine attention}, which replaces the dot-product attention with cosine similarity-based attention to prevent attention score collapse in deep networks; and (iii)~\emph{log-spaced continuous position bias (Log-CPB)}, which replaces the fixed relative position bias table with a small MLP that generates position biases from log-spaced relative coordinates, enabling smooth transfer across different window sizes and input resolutions.
+
+\section{Foundation Models in Ophthalmology}
+\label{sec:foundation_models}
+
+The concept of foundation models---large-scale models pretrained on broad data that can be adapted to a wide range of downstream tasks---has recently been formalised by Bommasani et al. \cite{bommasani2021opportunities}. In the context of ophthalmology, RETFound \cite{zhou2023retfound}, published in \emph{Nature} in 2023, represents the first domain-specific foundation model for retinal image analysis. RETFound is a ViT-Large/16 architecture (24 Transformer blocks, 1024 embedding dimension, 16 attention heads, totalling approximately 307 million parameters) pretrained on 1.6 million unlabelled retinal images from the Moorfields Eye Hospital NHS Foundation Trust using Masked Autoencoding (MAE) \cite{he2022masked}.
+
+The MAE pretraining strategy randomly masks a large proportion (75\%) of the input image patches and trains the model to reconstruct the missing pixels. This self-supervised objective forces the encoder to learn rich, generalisable representations of retinal morphology without requiring any labelled data. The resulting pretrained encoder serves as a powerful feature extractor that can be fine-tuned for diverse downstream tasks, including DR grading, glaucoma detection, and systemic disease prediction from retinal images.
+
+Zhou et al. demonstrated that RETFound, when fine-tuned on relatively small labelled datasets, consistently outperformed both ImageNet-pretrained and randomly initialised models across multiple ophthalmic benchmarks. Critically, the domain-specific pretraining on retinal images provided substantial advantages over generic ImageNet pretraining, as the model had already learned to represent clinically relevant features such as vascular morphology, optic disc structure, and lesion patterns.
+
+\subsection{Parameter-Efficient Fine-Tuning with LoRA}
+
+Adapting foundation models with hundreds of millions of parameters to downstream tasks via full fine-tuning is computationally expensive and risks catastrophic forgetting of the pretrained representations. Low-Rank Adaptation (LoRA) \cite{hu2022lora} addresses this challenge by freezing all pretrained weights and injecting trainable rank-decomposition matrices into the attention layers. Specifically, for a pretrained weight matrix $\mathbf{W}_0 \in \mathbb{R}^{d \times k}$, LoRA constrains the weight update $\Delta\mathbf{W}$ to a low-rank decomposition:
+\begin{equation}
+    \mathbf{W} = \mathbf{W}_0 + \Delta\mathbf{W} = \mathbf{W}_0 + \mathbf{B}\mathbf{A}, \quad \mathbf{B} \in \mathbb{R}^{d \times r}, \quad \mathbf{A} \in \mathbb{R}^{r \times k}
+\end{equation}
+where $r \ll \min(d, k)$ is the adaptation rank. This reduces the number of trainable parameters from $d \times k$ to $r \times (d + k)$, typically achieving a 100--1000$\times$ reduction. For a ViT-Large with $r = 8$, injecting LoRA into the QKV projection and output projection of all 24 Transformer blocks yields approximately 1.2 million trainable parameters out of 307 million total---a reduction to roughly 0.4\% of the full parameter count.
+
+LoRA's effectiveness in medical imaging has been extensively demonstrated. Studies have shown that LoRA-adapted foundation models can match or exceed the performance of full fine-tuning while requiring significantly less GPU memory and training time, making the foundation model paradigm accessible even on consumer-grade hardware.
+
+\section{Ordinal Regression in Medical Image Analysis}
+\label{sec:ordinal_regression_lit}
+
+Ordinal regression---the classification of instances into ordered categories---has a long history in statistics but has only recently received sustained attention in the deep learning community. The seminal deep learning approach, CORAL (COnsistent RAnk Logits) \cite{cao2020rank}, transforms the $K$-class ordinal problem into $K-1$ binary classification tasks, each predicting $P(Y > k)$ for $k \in \{0, 1, \ldots, K-2\}$. CORAL enforces rank consistency through a \emph{weight-sharing constraint}: all $K-1$ binary classifiers share the same weight vector and differ only in their bias terms. While effective, this constraint limits model expressiveness.
+
+CORN (Conditional Ordinal Regression for Neural Networks) \cite{shi2021corn} improved upon CORAL by achieving rank consistency without weight sharing. CORN trains each binary classifier on a \emph{conditional subset} of the data: task $k$ (predicting $P(Y > k \mid Y \geq k)$) is trained only on samples with true labels $\geq k$. By invoking the chain rule of probability, CORN guarantees monotonically non-increasing cumulative probabilities without constraining the model's representational capacity. This approach was shown to yield superior performance on ordinal classification benchmarks, particularly for tasks with many ordinal categories.
+
+In the context of medical imaging, ordinal regression has been applied to tasks including histopathological grading, radiological severity assessment (BI-RADS), and age estimation. Recent work (2024--2025) has further validated the superiority of ordinal-aware loss functions over standard cross-entropy for medical grading tasks, with studies reporting improved quadratic weighted kappa, reduced severe misclassification rates, and better calibration of predicted severity distributions.
+
+\section{Ensemble Methods for Classification}
+\label{sec:ensemble_lit}
+
+Ensemble methods combine the predictions of multiple models to improve accuracy and robustness beyond that achievable by any single model \cite{dietterich2000ensemble}. The theoretical basis for ensemble gains rests on the assumption that individual models make different (ideally uncorrelated) errors, allowing the ensemble to correct for individual model weaknesses through aggregation.
+
+In the context of DR classification, heterogeneous ensembles---combining architecturally diverse models (e.g., CNNs and transformers)---are particularly promising because different architectures learn fundamentally different feature representations. CNNs excel at extracting local textural patterns (microaneurysms, dot haemorrhages) through their inherent translational equivariance and local receptive fields, while transformers capture global spatial relationships (vascular topology, optic disc-to-lesion spatial patterns) through self-attention. Foundation models, pretrained on domain-specific data, contribute representations aligned with retinal morphology that may complement both.
+
+Late fusion, in which each model independently produces probability distributions over the severity grades and these distributions are combined through weighted averaging, is the most widely adopted ensemble strategy in medical image classification. The ensemble weights can be optimised on validation data to maximise the target metric (e.g., QWK), further amplifying the ensemble's advantage.
+
+\section{Summary and Research Gap}
+\label{sec:lit_summary}
+
+The literature review reveals several key observations that motivate the present work:
+
+\begin{enumerate}
+    \item Most existing DR classification systems treat severity grading as nominal multi-class classification, ignoring the inherent ordinal structure of the severity scale. This leads to suboptimal alignment between the training objective and the clinical evaluation metric (QWK).
+    
+    \item While CNNs and vision transformers have been individually evaluated for DR classification, systematic ablation studies comparing CNN, transformer, and foundation model paradigms under identical experimental conditions remain scarce.
+    
+    \item The potential of parameter-efficient adaptation (LoRA) for retinal foundation models in ordinal DR grading has not been thoroughly explored.
+    
+    \item Heterogeneous ensembles combining these three architectural paradigms for ordinal DR classification represent an under-explored direction.
+\end{enumerate}
+
+This thesis addresses these gaps by conducting a rigorous comparative study of EfficientNetV2-S, Swin-V2-Tiny, and RETFound with LoRA, all trained within a unified ordinal regression framework, and demonstrating the benefits of their heterogeneous ensemble fusion.

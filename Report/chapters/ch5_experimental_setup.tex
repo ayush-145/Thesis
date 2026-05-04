@@ -1,0 +1,102 @@
+\chapter{Experimental Setup}
+\label{ch:experimental}
+
+This chapter specifies the hardware, software, hyperparameters, and training procedures used to conduct the experiments reported in this thesis.
+
+\section{Hardware and Software Environment}
+\label{sec:hardware}
+
+All model training and evaluation were conducted on the Kaggle platform using NVIDIA GPU accelerators. Depending on session allocation, either an NVIDIA Tesla T4 (16~GB VRAM, Turing architecture) or an NVIDIA Tesla P100 (16~GB VRAM, Pascal architecture) was used. The training pipeline was implemented in Python 3.10 using PyTorch 2.x as the deep learning framework, with torchvision for pretrained model weights, Albumentations \cite{buslaev2020albumentations} for data augmentation, and scikit-learn for metrics computation.
+
+Due to Kaggle's 12-hour session time limit, training was conducted across multiple sessions using a stateful checkpointing mechanism that saves the complete training state (model weights, optimiser state, learning rate scheduler position, gradient scaler state, training history, and early stopping counters) at the end of each epoch. Upon session resumption, training continues seamlessly from the last completed epoch, ensuring no computational work is lost.
+
+\section{Hyperparameter Configuration}
+\label{sec:hyperparameters}
+
+Table~\ref{tab:hyperparams} summarises the hyperparameters for all three models. The configurations were chosen to balance model capacity against the risk of overfitting on the relatively small APTOS dataset (approximately 2,930 training images per fold).
+
+\begin{table}[htbp]
+\centering
+\caption{Hyperparameter configuration for all three models.}
+\label{tab:hyperparams}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Hyperparameter} & \textbf{EfficientNetV2-S} & \textbf{Swin-V2-T} & \textbf{RETFound+LoRA} \\
+\midrule
+Input resolution        & $512 \times 512$   & $512 \times 512$   & $224 \times 224$  \\
+Feature dimension       & 1280               & 768                & 1024              \\
+Pretrained weights      & ImageNet           & ImageNet           & MAE (1.6M retinal) \\
+LoRA rank $r$           & ---                & ---                & 8                 \\
+LoRA $\alpha$           & ---                & ---                & 16                \\
+LoRA dropout            & ---                & ---                & 0.05              \\
+Trainable parameters    & $\sim$21M (100\%)  & $\sim$28M (100\%)  & $\sim$1.2M (0.4\%) \\
+\midrule
+Epochs (max)            & 30                 & 30                 & 30                \\
+Base learning rate      & $1 \times 10^{-5}$ & $5 \times 10^{-6}$ & $2 \times 10^{-4}$ \\
+Minimum learning rate   & $1 \times 10^{-7}$ & $1 \times 10^{-7}$ & $1 \times 10^{-6}$ \\
+Warmup epochs           & 3                  & 3                  & 5                 \\
+Optimiser               & AdamW              & AdamW              & AdamW             \\
+Weight decay            & 0.03               & 0.05               & 0.03              \\
+Batch size (per GPU)    & 4                  & 4                  & 4                 \\
+Gradient accumulation   & 4 steps            & 4 steps            & 4 steps           \\
+Effective batch size    & 16                 & 16                 & 16                \\
+Gradient clip norm      & 1.0                & 1.0                & 1.0               \\
+Classifier dropout      & 0.15               & 0.20               & 0.10              \\
+\midrule
+CORN weight ($\alpha$)  & 0.7                & 0.7                & 0.7               \\
+Focal $\gamma$          & 2.0                & 2.0                & 2.0               \\
+Focal $\alpha$          & 0.25               & 0.25               & 0.25              \\
+\midrule
+Early stopping patience & 7 epochs           & 7 epochs           & 7 epochs          \\
+Mixed precision (AMP)   & Yes (FP16)         & Yes (FP16)         & Yes (FP16)        \\
+Gradient checkpointing  & Yes                & Yes                & Yes               \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several design decisions merit explanation:
+
+\textbf{Learning rate selection.} The EfficientNetV2-S and Swin-V2-T models, which are fully fine-tuned from ImageNet pretrained weights, use conservative learning rates ($10^{-5}$ and $5 \times 10^{-6}$ respectively) to avoid destructive overwriting of the pretrained features. The Swin-V2-T uses a lower learning rate than EfficientNetV2-S because transformers are generally more sensitive to learning rate perturbations on small datasets. In contrast, RETFound with LoRA uses a higher learning rate ($2 \times 10^{-4}$) because the LoRA adapters are randomly initialised and need larger updates, while the frozen backbone weights are not at risk of being overwritten.
+
+\textbf{Weight decay.} The Swin-V2-T uses stronger weight decay ($0.05$) compared to EfficientNetV2-S ($0.03$) as an additional regularisation measure against overfitting, reflecting the transformer's higher parameter count relative to the dataset size.
+
+\textbf{Dropout.} The classifier head dropout is calibrated per model: 0.15 for EfficientNetV2-S, 0.20 for Swin-V2-T (most prone to overfitting), and 0.10 for RETFound (where the frozen backbone and LoRA dropout already provide significant regularisation).
+
+\section{Training Procedure}
+\label{sec:training_procedure}
+
+\subsection{Optimiser and Scheduler}
+
+All models use the AdamW optimiser \cite{loshchilov2019adamw} with decoupled weight decay, $\beta_1 = 0.9$, $\beta_2 = 0.999$, and $\epsilon = 10^{-8}$. The learning rate follows a cosine annealing schedule with linear warmup \cite{loshchilov2017sgdr}:
+\begin{equation}
+    \eta(t) = \begin{cases}
+        \eta_{\text{base}} \cdot \frac{t}{T_{\text{warm}}} & \text{if } t \leq T_{\text{warm}} \\[4pt]
+        \eta_{\text{min}} + \frac{1}{2}(\eta_{\text{base}} - \eta_{\text{min}})\left(1 + \cos\left(\frac{\pi \cdot (t - T_{\text{warm}})}{T_{\text{total}} - T_{\text{warm}}}\right)\right) & \text{otherwise}
+    \end{cases}
+    \label{eq:cosine_warmup}
+\end{equation}
+where $t$ is the current epoch, $T_{\text{warm}}$ is the warmup duration, $T_{\text{total}}$ is the total number of epochs, $\eta_{\text{base}}$ is the base learning rate, and $\eta_{\text{min}}$ is the minimum learning rate.
+
+\subsection{Mixed Precision Training}
+
+All models employ Automatic Mixed Precision (AMP) \cite{micikevicius2018mixed} with FP16 computation for the forward and backward passes and FP32 for parameter updates. AMP reduces GPU memory consumption by approximately 40\% and improves throughput on Tensor Core-equipped GPUs (T4, P100) by performing matrix multiplications in half precision. A gradient scaler dynamically adjusts the loss scaling factor to prevent underflow in FP16 gradients.
+
+\subsection{Gradient Accumulation}
+
+To achieve an effective batch size of 16 within the 16~GB VRAM constraint, we employ gradient accumulation over 4 micro-batches of size 4. The loss is divided by the accumulation factor before backpropagation, and the optimiser step is executed only after every 4 micro-batches. Gradient clipping (max norm: $1.0$) is applied after unscaling the accumulated gradients to prevent training instability.
+
+\subsection{Early Stopping}
+
+Training is monitored using validation QWK as the early stopping criterion. If the validation QWK does not improve by at least $\delta = 0.001$ for 7 consecutive epochs, training is terminated to prevent overfitting. The model weights corresponding to the best validation QWK are saved separately and used for final evaluation.
+
+\section{Evaluation Protocol}
+\label{sec:eval_protocol}
+
+After training, each model is evaluated on the held-out validation fold using the best checkpoint (highest validation QWK). The evaluation pipeline generates:
+\begin{enumerate}
+    \item \textbf{Metrics:} QWK, accuracy, and per-class precision/recall/F1-score.
+    \item \textbf{Confusion matrices:} Normalised by row (true class) to show the per-class classification accuracy distribution.
+    \item \textbf{ROC and PR curves:} One-vs-Rest curves for each of the 5 DR grades, with AUC and average precision scores.
+    \item \textbf{Latent space visualisations:} UMAP \cite{mcinnes2018umap} and t-SNE \cite{vandermaaten2008tsne} projections of the penultimate feature vectors to assess class separability in the learned representation space.
+    \item \textbf{Ensemble artefacts:} Standardised \texttt{.npy} files containing logits, predictions, ground truth labels, and features for each fold, enabling offline ensemble fusion.
+\end{enumerate}

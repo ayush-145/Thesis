@@ -1,0 +1,68 @@
+\chapter{Introduction}
+\label{ch:introduction}
+
+\section{Background and Motivation}
+\label{sec:background}
+
+Diabetes mellitus is a chronic metabolic disorder affecting an estimated 537 million adults globally as of 2021, a figure projected to rise to 783 million by 2045 \cite{teo2021global}. Among the many complications of prolonged hyperglycaemia, Diabetic Retinopathy (DR) is the most prevalent microvascular complication affecting the eyes and remains the leading cause of vision impairment and preventable blindness among the working-age population worldwide \cite{yau2012global}. DR manifests as progressive damage to the retinal vasculature, beginning with microaneurysms and intraretinal haemorrhages in its early stages and advancing to neovascularisation and tractional retinal detachment in its most severe form.
+
+The International Clinical Diabetic Retinopathy (ICDR) severity scale, widely adopted since its standardisation by Wilkinson et al. \cite{wilkinson2003proposed}, classifies DR into five grades of increasing severity:
+\begin{enumerate}[noitemsep]
+    \item \textbf{Grade 0 --- No DR:} No visible retinopathy.
+    \item \textbf{Grade 1 --- Mild Non-Proliferative DR (NPDR):} Presence of microaneurysms only.
+    \item \textbf{Grade 2 --- Moderate NPDR:} Microaneurysms with intraretinal haemorrhages, hard exudates, or cotton-wool spots, but less severe than Grade 3.
+    \item \textbf{Grade 3 --- Severe NPDR:} Extensive intraretinal haemorrhages in all four quadrants, venous beading, or prominent intraretinal microvascular abnormalities (IRMA).
+    \item \textbf{Grade 4 --- Proliferative DR (PDR):} Neovascularisation of the disc or elsewhere, vitreous or preretinal haemorrhage.
+\end{enumerate}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{diagnostics_dr_image.jpg}
+    \caption{Representative fundus images illustrating the different severity grades of Diabetic Retinopathy: (a) Grade 0 (No DR), (b) Grade 1 (Mild NPDR), (c) Grade 2 (Moderate NPDR), (d) Grade 3 (Severe NPDR), and (e) Grade 4 (Proliferative DR) \cite{kassani2022diagnostics}.}
+    \label{fig:diagnostics_grades}
+\end{figure}
+
+The clinical significance of this grading lies in its direct correspondence to treatment urgency. While Grades~0 and~1 generally require only routine follow-up, Grades~3 and~4 necessitate urgent referral for laser photocoagulation or intravitreal anti-VEGF therapy to prevent irreversible vision loss. Consequently, accurate and timely severity assessment is a clinical imperative.
+
+However, the global capacity for ophthalmic screening is severely constrained. Manual grading of retinal fundus photographs by trained ophthalmologists is time-consuming, subjective (inter-grader agreement typically ranges from $\kappa = 0.65$ to $0.85$), and impractical at population scale, particularly in low- and middle-income countries where the burden of diabetes is highest yet ophthalmologist-to-patient ratios are lowest. This disparity between the scale of the screening need and the availability of expert graders provides a compelling motivation for automated, computer-aided DR classification systems.
+
+\section{Deep Learning for Retinal Image Analysis}
+\label{sec:dl_retinal}
+
+The application of deep learning to retinal image analysis has undergone rapid evolution over the past decade. Seminal works by Gulshan et al. \cite{gulshan2016development} and Ting et al. \cite{ting2017development} demonstrated that deep convolutional neural networks (CNNs) trained on large-scale datasets of fundus photographs could achieve diagnostic accuracy comparable to, or exceeding, that of board-certified ophthalmologists for binary referable-DR detection. These studies, validated across diverse ethnic populations, established the clinical viability of AI-assisted DR screening and catalysed significant research interest.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{bspc_dr_image.jpg}
+    \caption{Illustration of deep learning methodologies and architectures applied for diabetic retinopathy detection \cite{elsevier2024bspc}.}
+    \label{fig:bspc_dl_architecture}
+\end{figure}
+
+Subsequent developments in the field have been driven by three major trends. First, architectural innovation has progressed from simple transfer-learned CNNs (e.g., InceptionV3, ResNet-50) to more efficient and powerful designs such as EfficientNet \cite{tan2019efficientnet} and hierarchical vision transformers like the Swin Transformer \cite{liu2021swin}. Second, the emergence of foundation models---large-scale models pretrained on vast domain-specific corpora---has introduced a new paradigm for medical image analysis. RETFound \cite{zhou2023retfound}, pretrained on 1.6 million unlabelled retinal images via masked autoencoding, represents a notable example of this paradigm, offering strong initialisation for downstream ophthalmic tasks. Third, parameter-efficient fine-tuning methods such as Low-Rank Adaptation (LoRA) \cite{hu2022lora} have made it feasible to adapt these large foundation models to specific clinical tasks using limited labelled data and modest computational resources.
+
+Despite these advances, a fundamental limitation persists in how the DR classification problem is typically formulated. The overwhelming majority of existing approaches treat DR grading as a nominal (unordered) multi-class classification problem, optimising standard cross-entropy loss. This formulation implicitly assumes that all misclassifications are equally costly---that confusing Grade~0 with Grade~4 is no worse than confusing Grade~1 with Grade~2. This assumption is both clinically inappropriate and mathematically incongruent with the evaluation metrics commonly used in DR grading competitions, particularly the Quadratic Weighted Kappa (QWK), which penalises misclassifications proportionally to the square of the distance between predicted and true grades.
+
+\section{Ordinal Regression for Disease Severity Grading}
+\label{sec:ordinal_motivation}
+
+DR severity grades possess an inherent ordinal structure: Grade~0 $<$ Grade~1 $<$ Grade~2 $<$ Grade~3 $<$ Grade~4 in terms of both clinical severity and treatment urgency. Ordinal regression, unlike standard classification, explicitly models this ordering constraint. By decomposing the $K$-class ordinal problem into $K-1$ binary classification subtasks (each asking ``Is the severity greater than rank $k$?''), ordinal regression frameworks such as CORAL \cite{cao2020rank} and CORN \cite{shi2021corn} enforce rank-consistent predictions while directly aligning the training objective with distance-sensitive evaluation metrics like QWK.
+
+This alignment is not merely a technical convenience but a clinical necessity. In a screening context, misclassifying a patient with proliferative DR (Grade~4) as having no retinopathy (Grade~0) carries far greater clinical risk than classifying them as having severe NPDR (Grade~3). Ordinal regression naturally encodes this asymmetry, making it a principled framework for disease severity grading.
+
+\section{Research Objectives}
+\label{sec:objectives}
+
+The primary objective of this thesis is to investigate and compare deep learning architectures for DR severity classification within an ordinal regression framework. Specifically, the research contributions of this work are as follows:
+
+\begin{enumerate}
+    \item \textbf{Architectural Ablation Study:} A systematic comparison of three architecturally diverse models---a convolutional neural network (EfficientNetV2-S), a hierarchical vision transformer (Swin-V2-Tiny), and a domain-specific foundation model (RETFound with LoRA)---evaluated under identical preprocessing, training, and evaluation conditions to enable fair assessment of their relative strengths.
+    
+    \item \textbf{Ordinal Loss Formulation:} The design and implementation of a hybrid ordinal loss function combining Conditional Ordinal Regression (CORN) with an Ordinal Focal Loss, which simultaneously enforces rank consistency and addresses the severe class imbalance inherent in DR datasets.
+    
+    \item \textbf{Parameter-Efficient Foundation Model Adaptation:} A demonstration that RETFound, adapted via LoRA with only $\sim$0.4\% of its 307 million parameters trainable, can match or exceed fully fine-tuned architectures, highlighting the practical value of domain-specific pretraining.
+    
+    \item \textbf{Heterogeneous Ensemble Fusion:} The development of a late-fusion ensemble strategy that combines the complementary representations learned by CNN, transformer, and foundation model architectures to achieve superior and more stable performance.
+    
+    \item \textbf{Reproducible Experimental Framework:} A complete, open-source pipeline encompassing preprocessing, training, evaluation, and ensemble fusion, designed for reproducibility on consumer-grade GPU hardware (NVIDIA T4/P100).
+\end{enumerate}
+

@@ -1,0 +1,60 @@
+\chapter{Conclusion and Future Work}
+\label{ch:conclusion}
+
+\section{Summary of Contributions}
+\label{sec:summary}
+
+This thesis has presented a comprehensive study of deep learning architectures for automated Diabetic Retinopathy severity classification within an ordinal regression framework. The principal contributions are summarised as follows:
+
+\begin{enumerate}
+    \item \textbf{Architectural Ablation Study.} We conducted a rigorous comparative evaluation of three architecturally diverse models---EfficientNetV2-S (CNN), Swin Transformer V2-Tiny (hierarchical vision transformer), and RETFound with LoRA (domain-specific foundation model)---under identical preprocessing, loss function, training, and evaluation conditions. This controlled comparison provides empirical evidence for the relative strengths of each paradigm on a clinically relevant medical imaging task.
+    
+    \item \textbf{Ordinal Regression Framework.} We designed and implemented a hybrid ordinal loss function combining CORN (Conditional Ordinal Regression) with Ordinal Focal Loss, which simultaneously enforces rank-consistent predictions aligned with the QWK metric and addresses the severe class imbalance inherent in DR datasets. The CORN formulation decomposes 5-class ordinal classification into 4 conditional binary tasks, guaranteeing monotonically non-increasing cumulative probabilities through the chain rule of probability.
+    
+    \item \textbf{Parameter-Efficient Foundation Model Adaptation.} We demonstrated that RETFound, adapted via LoRA with only $\sim$0.4\% of its 307 million parameters trainable ($\sim$1.2M parameters), achieves the highest individual QWK ($0.9163 \pm 0.0077$), surpassing fully fine-tuned models with 17--23$\times$ more trainable parameters. This result validates the practical value of domain-specific pretraining and parameter-efficient fine-tuning for medical image analysis.
+    
+    \item \textbf{Heterogeneous Ensemble.} We developed a late-fusion ensemble with grid-search weight optimisation that combines the complementary representations of all three models, achieving a mean QWK of $0.9178 \pm 0.0060$---surpassing the best individual model in both mean performance and stability (reduced variance).
+    
+    \item \textbf{Reproducible Pipeline.} The complete training, evaluation, and ensemble pipeline is implemented as a modular, open-source codebase designed for reproducibility on consumer-grade GPU hardware (NVIDIA T4/P100), with stateful checkpointing for session-resilient training on cloud platforms.
+\end{enumerate}
+
+\section{Key Findings}
+\label{sec:key_findings}
+
+The experimental results yield the following key findings:
+
+\begin{itemize}
+    \item \textbf{Domain-specific pretraining provides a decisive advantage} over ImageNet pretraining for retinal image classification. RETFound's superiority with two orders of magnitude fewer trainable parameters demonstrates that learning relevant visual representations from unlabelled domain data is more valuable than having more trainable capacity initialised from out-of-domain features.
+    
+    \item \textbf{CNNs retain a competitive edge over transformers on small datasets.} EfficientNetV2-S outperformed Swin-V2-Tiny ($0.9116$ vs.\ $0.9074$), suggesting that the CNN's inductive biases provide a natural regularisation advantage when training data is limited ($\sim$2,930 images per fold).
+    
+    \item \textbf{Ordinal regression produces clinically appropriate error patterns.} Misclassifications are concentrated between adjacent grades, with virtually no distant misclassifications, ensuring that the system's errors are clinically safe.
+    
+    \item \textbf{Architectural diversity enables meaningful ensemble gains.} The three models capture sufficiently distinct feature representations (as confirmed by Spearman correlation analysis) to benefit from fusion, with the ensemble consistently improving upon or matching the best individual model across all five folds.
+\end{itemize}
+
+\section{Future Work}
+\label{sec:future_work}
+
+Several directions for future research emerge from this work:
+
+\begin{enumerate}
+    \item \textbf{Multi-dataset validation.} Evaluating the proposed framework on additional DR datasets (EyePACS, Messidor-2, IDRiD, DDR) would assess the generalisability of the models and the ordinal regression approach across different imaging protocols and patient populations.
+    
+    \item \textbf{Controlled ordinal vs.\ nominal comparison.} A direct ablation comparing the hybrid CORN + Focal loss against standard cross-entropy under identical architectural and training conditions would provide definitive evidence for the benefit of ordinal regression in DR grading.
+    
+    \item \textbf{Attention map analysis and explainability.} Generating gradient-weighted class activation maps (Grad-CAM) or attention rollout visualisations would provide insight into which retinal structures each model attends to, enhancing clinical interpretability and trust.
+    
+    \item \textbf{Stage-wise training for hybrid architectures.} The failure of the CNN--Transformer hybrid (Model~C) highlights the need for careful stage-wise training protocols (e.g., pretraining the Transformer layers on CNN features before end-to-end fine-tuning). Revisiting this approach with differential learning rates and progressive unfreezing could yield a competitive hybrid model.
+    
+    \item \textbf{Larger foundation models and multi-task learning.} Adapting larger RETFound variants or multi-modal foundation models (combining fundus images with OCT or clinical metadata) through LoRA for joint DR grading and macular oedema detection represents a promising direction for comprehensive retinal disease screening.
+    
+    \item \textbf{Clinical deployment study.} Evaluating the system in a prospective clinical triage setting, measuring its impact on ophthalmologist workload reduction and patient outcomes, would be the ultimate validation of the proposed approach.
+    
+    \item \textbf{Noise-robust training.} Incorporating label noise modelling or noise-robust loss functions could improve performance on datasets with inherent annotation subjectivity, such as the boundary grades (Mild and Moderate NPDR).
+\end{enumerate}
+
+\section{Concluding Remarks}
+\label{sec:concluding}
+
+This thesis demonstrates that combining domain-specific foundation models, parameter-efficient adaptation, and ordinal regression yields a robust framework for automated DR severity grading. The high agreement with expert annotations (QWK $> 0.91$ for individual models, $0.9178$ for the ensemble) validates its clinical potential. As medical imaging foundation models grow in scale, the parameter-efficient paradigm explored here will be crucial for translating them into practical tools, especially in resource-constrained settings where the diabetic eye disease burden is highest.

@@ -1,0 +1,6 @@
+{
+  "model": "ModelA_EfficientNetV2S",
+  "mean_qwk": 0.9116446551393096,
+  "std_qwk": 0.007646664426363922,
+  "total_time_seconds": 2327.2232961654663
+}

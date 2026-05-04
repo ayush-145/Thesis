@@ -1,0 +1,144 @@
+\chapter{Dataset and Preprocessing}
+\label{ch:dataset}
+
+This chapter describes the dataset used for evaluation and the preprocessing pipeline applied to standardise the retinal fundus images prior to model training. Consistent preprocessing is essential for ensuring that the deep learning models focus on clinically relevant pathological features rather than artefacts of imaging variability.
+
+\section{APTOS 2019 Blindness Detection Dataset}
+\label{sec:aptos}
+
+All experiments in this thesis are conducted on the \textbf{APTOS 2019 Blindness Detection} dataset \cite{aptos2019}, published as part of a Kaggle competition organised by the Asia Pacific Tele-Ophthalmology Society. The dataset comprises 3,662 colour fundus photographs captured across multiple clinical sites in rural India using a variety of fundus cameras. Each image is annotated by trained clinicians with a DR severity grade on the five-level ICDR scale (0--4).
+
+\subsection{Class Distribution}
+
+The APTOS dataset exhibits a pronounced class imbalance, as summarised in Table~\ref{tab:aptos_distribution}. The majority class (Grade~0, No DR) constitutes approximately 49.3\% of the dataset, while the minority class (Grade~4, Proliferative DR) accounts for only 5.0\%. This imbalance reflects the natural prevalence distribution of DR in screening populations and poses a significant challenge for model training, as standard loss functions tend to bias predictions towards the majority class.
+
+\begin{table}[htbp]
+\centering
+\caption{Class distribution of the APTOS 2019 dataset.}
+\label{tab:aptos_distribution}
+\begin{tabular}{clcc}
+\toprule
+\textbf{Grade} & \textbf{Clinical Description} & \textbf{Count} & \textbf{Proportion (\%)} \\
+\midrule
+0 & No DR                    & 1,805 & 49.3 \\
+1 & Mild NPDR                &   370 & 10.1 \\
+2 & Moderate NPDR            &   999 & 27.3 \\
+3 & Severe NPDR              &   193 &  5.3 \\
+4 & Proliferative DR         &   295 &  8.1 \\
+\midrule
+  & \textbf{Total}           & \textbf{3,662} & \textbf{100.0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.7\textwidth]{eda_class_distribution}
+    \caption{Exploratory Data Analysis (EDA) diagram illustrating the severe class imbalance in the APTOS 2019 dataset across the five severity grades.}
+    \label{fig:eda_distribution}
+\end{figure}
+
+\subsection{Dataset Characteristics and Challenges}
+
+The APTOS dataset presents several challenges representative of real-world clinical data:
+
+\begin{itemize}
+    \item \textbf{Imaging variability:} Images are captured with different fundus cameras, resulting in variations in resolution (ranging from $474 \times 358$ to $3,388 \times 2,588$ pixels), colour balance, contrast, and field of view.
+    \item \textbf{Quality variation:} Some images exhibit poor focus, uneven illumination, dust artefacts, or significant vignetting, reflecting the challenges of tele-ophthalmology in resource-limited settings.
+    \item \textbf{Annotation subjectivity:} DR grading inherently involves subjective judgement, particularly at the boundaries between adjacent grades (e.g., Grade~1 vs.~Grade~2), contributing to label noise.
+    \item \textbf{Class imbalance:} The severe skew towards Grade~0 (Table~\ref{tab:aptos_distribution}) necessitates loss functions or sampling strategies that account for minority-class under-representation.
+\end{itemize}
+
+\section{Ben Graham Preprocessing Pipeline}
+\label{sec:preprocessing}
+
+To mitigate the imaging variability and enhance the discriminative quality of pathological features, we adopt a preprocessing pipeline inspired by Ben Graham's first-place solution to the 2015 Kaggle Diabetic Retinopathy Detection competition \cite{graham2015kaggle}. The pipeline comprises four sequential stages, each designed to address a specific source of variation, as illustrated in Figure~\ref{fig:preprocessing_pipeline}.
+
+\begin{figure}[htbp]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tikzpicture}[
+        node distance=0.6cm,
+        block/.style={rectangle, draw, fill=blue!8, text width=2.8cm, text centered, minimum height=1.1cm, rounded corners=3pt, font=\small},
+        arrow/.style={-{Stealth[length=3mm]}, thick}
+    ]
+        \node[block] (raw) {Raw Fundus\\Image};
+        \node[block, right=of raw] (crop) {Auto-Crop\\FOV};
+        \node[block, right=of crop] (resize) {Resize to\\$N \times N$};
+        \node[block, right=of resize] (blur) {Gaussian Blur\\Subtraction};
+        \node[block, right=of blur] (clahe) {CLAHE\\(Green Ch.)};
+        \node[block, right=of clahe, fill=green!10] (out) {Preprocessed\\Image};
+        
+        \draw[arrow] (raw) -- (crop);
+        \draw[arrow] (crop) -- (resize);
+        \draw[arrow] (resize) -- (blur);
+        \draw[arrow] (blur) -- (clahe);
+        \draw[arrow] (clahe) -- (out);
+    \end{tikzpicture}%
+    }
+    \caption{Overview of the Ben Graham preprocessing pipeline applied to each fundus image. $N = 512$ for EfficientNetV2-S and Swin-V2-Tiny, $N = 224$ for RETFound.}
+    \label{fig:preprocessing_pipeline}
+\end{figure}
+
+\subsection{Stage 1: Automated Field-of-View Cropping}
+\label{sec:fov_crop}
+
+Raw fundus images typically contain a circular field of view (FOV) surrounded by uninformative black borders. These borders vary in extent depending on the imaging equipment and contribute no diagnostic information while increasing the computational cost and potentially confusing the model. The automated cropping algorithm operates as follows:
+
+\begin{enumerate}
+    \item Convert the image to grayscale and apply a binary threshold ($\tau = 10$) to separate the bright fundus region from the dark background.
+    \item Apply morphological closing with an elliptical structuring element ($15 \times 15$ pixels) to fill small gaps within the fundus region.
+    \item Extract external contours and select the largest contour (corresponding to the circular FOV).
+    \item Compute the bounding rectangle of this contour and crop the image with a small margin ($m = 2\%$ of the bounding box dimensions) to ensure no fundus information is lost.
+\end{enumerate}
+
+\subsection{Stage 2: Resolution Standardisation}
+\label{sec:resize}
+
+Following cropping, all images are resized to a fixed square resolution. We use $512 \times 512$ pixels for the CNN (EfficientNetV2-S) and transformer (Swin-V2-Tiny) architectures, and $224 \times 224$ pixels for the foundation model (RETFound), consistent with each model's native input resolution. Area-based interpolation is used for downsampling (to preserve anti-aliasing) and bicubic interpolation for upsampling.
+
+\subsection{Stage 3: Gaussian Blur Subtraction}
+\label{sec:gaussian_sub}
+
+Fundus images exhibit significant low-frequency illumination variations caused by non-uniform retinal curvature, camera optics, and ambient lighting conditions. Gaussian blur subtraction removes these illumination artefacts while preserving the high-frequency pathological features (microaneurysms, haemorrhages) that are diagnostically relevant. The operation is defined as:
+\begin{equation}
+    I_{\text{norm}}(x, y) = I(x, y) - G_\sigma * I(x, y) + 128
+    \label{eq:blur_sub}
+\end{equation}
+where $I(x, y)$ is the input image, $G_\sigma$ denotes a Gaussian kernel with standard deviation $\sigma = w / 30$ (where $w$ is the image width), $*$ represents convolution, and the constant 128 re-centres the pixel values to prevent negative intensities after subtraction. This operation effectively acts as a high-pass filter, normalising the local illumination while amplifying the contrast of small-scale lesions.
+
+\subsection{Stage 4: CLAHE on the Green Channel}
+\label{sec:clahe}
+
+Contrast Limited Adaptive Histogram Equalization (CLAHE) \cite{zuiderveld1994clahe} is applied selectively to the green channel of the BGR image. The green channel is targeted because it carries the highest contrast for the haemoglobin-absorbing retinal lesions characteristic of DR (microaneurysms and haemorrhages appear as dark red structures against the orange-red fundus background, and are most visible in the green channel due to the absorption spectrum of haemoglobin).
+
+CLAHE divides the image into a grid of non-overlapping tiles ($8 \times 8$ in our implementation) and performs histogram equalisation independently within each tile, with a clip limit ($c = 2.0$) that constrains the maximum amplification to prevent noise enhancement. The tile boundaries are interpolated bilinearly to eliminate visible seam artefacts. The enhanced green channel is then recombined with the original blue and red channels.
+
+\subsection{Quality Filtering}
+\label{sec:quality}
+
+An optional automated quality filter is applied to identify and exclude images that are too dark (mean intensity $< 15$), too bright (mean intensity $> 245$), exhibit insufficient contrast (standard deviation $< 20$), or have an excessively small fundus region (fundus pixel ratio $< 0.15$). For the APTOS dataset, which has undergone curation, this filter rejects a negligible number of images but serves as a safeguard for more heterogeneous datasets.
+
+\section{Data Augmentation Strategy}
+\label{sec:augmentation}
+
+To combat overfitting on the relatively small APTOS training set (approximately 2,930 images per fold after the 80/20 split), we employ a comprehensive augmentation pipeline implemented using the Albumentations library \cite{buslaev2020albumentations}. The augmentation strategy is designed to simulate the natural variability encountered in clinical fundus imaging while avoiding transformations that would alter the diagnostic content of the images.
+
+The augmentation pipeline, applied only during training, comprises the following transformations:
+
+\begin{itemize}
+    \item \textbf{Geometric transformations:} Random resized cropping (scale: $0.8$--$1.0$, ratio: $0.9$--$1.1$), horizontal and vertical flips ($p = 0.5$ each), random 90° rotations ($p = 0.5$), and affine transformations (translation: $\pm5\%$, scaling: $0.9$--$1.1$, rotation: $\pm30°$, $p = 0.5$). These simulate variations in camera positioning and patient orientation.
+    
+    \item \textbf{Elastic distortions:} One of elastic transform ($\alpha = 1.0$, $\sigma = 50$), grid distortion (5 steps, limit: $0.3$), or optical distortion (limit: $0.3$) is applied with probability $p = 0.3$. These simulate the natural deformations of the curved retinal surface when projected onto a 2D image.
+    
+    \item \textbf{Photometric augmentations:} Random brightness and contrast adjustments ($\pm20\%$) or hue-saturation-value shifts, applied with probability $p = 0.4$. These compensate for illumination variability across imaging devices.
+    
+    \item \textbf{Regularisation augmentations:} Gaussian noise ($p = 0.2$), Gaussian blur ($p = 0.2$, kernel: $3$--$5$), and CoarseDropout ($p = 0.3$, 1--8 holes), which serves as a form of Cutout regularisation to improve robustness to occlusions.
+\end{itemize}
+
+During validation and evaluation, only deterministic resizing and ImageNet normalisation (mean: $[0.485, 0.456, 0.406]$, std: $[0.229, 0.224, 0.225]$) are applied to ensure reproducibility.
+
+\section{Cross-Validation Protocol}
+\label{sec:cv}
+
+To obtain robust performance estimates, we employ \textbf{stratified 5-fold cross-validation} \cite{refaeilzadeh2009cross} with a fixed random seed ($s = 42$). Stratification ensures that the class distribution in each fold mirrors the overall dataset distribution, which is particularly important given the severe class imbalance (Table~\ref{tab:aptos_distribution}). Each fold uses approximately 80\% of the data (2,930 images) for training and 20\% (732 images) for validation. All three models and the ensemble are evaluated on identical fold splits to enable fair comparison.

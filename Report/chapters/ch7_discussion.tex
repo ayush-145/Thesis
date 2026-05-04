@@ -1,0 +1,75 @@
+\chapter{Discussion}
+\label{ch:discussion}
+
+This chapter synthesises the experimental findings, analyses the trade-offs between the three architectural paradigms, examines the clinical implications of the proposed framework, and acknowledges its limitations.
+
+\section{CNN vs.\ Transformer vs.\ Foundation Model}
+\label{sec:arch_comparison}
+
+The results of this ablation study provide empirical insight into the relative merits of the three dominant paradigms in modern computer vision when applied to medical image classification on a small, class-imbalanced dataset.
+
+\subsection{EfficientNetV2-S: The Efficiency of Inductive Bias}
+
+EfficientNetV2-S achieves strong performance ($\kappa = 0.9116$) with the fastest training time ($\sim$11 hours) and a moderate parameter count ($\sim$21M). Its success on the APTOS dataset can be attributed to the CNN's strong inductive biases---locality and translation equivariance---which are particularly advantageous when training data is limited. The convolutional filters are inherently suited to detecting the local textural patterns characteristic of DR lesions: microaneurysms, dot haemorrhages, and hard exudates are all spatially compact features that a CNN can learn from relatively few examples.
+
+The Fused-MBConv blocks in the early stages provide efficient feature extraction, while the SE attention mechanism enables the network to selectively amplify informative channels. However, the purely local receptive field limits the model's ability to reason about global spatial relationships, such as the distribution of lesions across retinal quadrants---a criterion explicitly used in the clinical grading of Severe NPDR.
+
+\subsection{Swin-V2-Tiny: Global Reasoning at a Cost}
+
+Swin-V2-Tiny achieves the lowest mean QWK ($\kappa = 0.9074$) among the three models, though with the lowest variance ($\pm 0.0051$). This seemingly paradoxical result---better stability but worse mean performance---reflects the fundamental trade-off of transformer architectures on small datasets. The shifted-window self-attention mechanism provides the capacity for global spatial reasoning, but this flexibility comes at the cost of requiring more data to learn effective attention patterns. The stronger regularisation (weight decay $0.05$, dropout $0.20$) necessary to prevent overfitting on $\sim$2,930 training images per fold constrains the model's effective capacity, resulting in a performance ceiling below that of the CNN.
+
+Nevertheless, the model's stable performance across folds ($\pm 0.0051$, the lowest variance) suggests that the transformer's attention mechanism, once learned, generalises robustly across different data partitions. This stability is valuable in clinical deployment, where consistent performance across patient populations is as important as peak accuracy.
+
+\subsection{RETFound + LoRA: The Foundation Model Advantage}
+
+RETFound achieves the highest individual QWK ($\kappa = 0.9163$) while training only 0.4\% of its parameters, representing a fundamentally different approach to the accuracy-efficiency trade-off. The model's strong performance can be attributed to two factors:
+
+First, the MAE pretraining on 1.6 million retinal images has endowed the backbone with rich, domain-specific representations of retinal morphology. The frozen backbone already ``understands'' the visual language of fundus images---vascular branching patterns, optic disc structure, macular anatomy---without requiring any task-specific training on these features. This domain-specific initialisation provides a substantial advantage over ImageNet pretraining, where the network must repurpose features learned from natural images (e.g., textures of animals, objects) for the very different domain of retinal pathology.
+
+Second, the LoRA adaptation strategy enables highly targeted fine-tuning of the attention mechanism's routing behaviour (through the QKV and output projections) without perturbing the feature representations learned during pretraining. The low-rank constraint ($r = 8$) acts as an implicit regulariser, preventing the small APTOS dataset from overwriting the pretrained representations.
+
+The trade-off is computational: RETFound requires $\sim$11 hours of training despite having the fewest trainable parameters, due to the large forward pass through the 307M-parameter backbone (24 Transformer blocks at $224 \times 224$ resolution) and the overhead of gradient checkpointing.
+
+\section{The Value of Ordinal Regression}
+\label{sec:ordinal_value}
+
+A central thesis of this work is that ordinal regression is superior to standard multi-class classification for disease severity grading. While a controlled experiment comparing CORN loss against cross-entropy loss is beyond the scope of this thesis, several indirect lines of evidence support this claim:
+
+\begin{enumerate}
+    \item \textbf{Confusion matrix structure:} The misclassification patterns in Figure~\ref{fig:confusion_matrices} are predominantly between adjacent grades, with virtually no distant misclassifications. This is a direct consequence of the rank-consistent predictions enforced by CORN.
+    
+    \item \textbf{High QWK relative to accuracy:} All models achieve QWK $> 0.90$ despite raw accuracy of only $\sim$82--84\%. This gap indicates that the few misclassifications that do occur are predominantly off-by-one errors, which incur minimal QWK penalty. Under standard cross-entropy (which does not encode ordinality), one would expect a higher proportion of distant misclassifications, resulting in lower QWK for similar accuracy levels.
+    
+    \item \textbf{Ordinal latent space structure:} The UMAP and t-SNE visualisations (Figure~\ref{fig:umap}) show clusters arranged in an ordinal sequence, with adjacent grades positioned close together. This suggests that the CORN loss encourages the model to learn an internally consistent ordinal representation.
+\end{enumerate}
+
+\section{Ensemble Analysis}
+\label{sec:ensemble_analysis}
+
+The ensemble's improvement of $+0.0015$ in mean QWK over the best individual model, while modest, is accompanied by a meaningful reduction in variance (from $\pm 0.0077$ to $\pm 0.0060$). The ensemble's value lies not in dramatic accuracy gains but in its \textbf{risk reduction}: by diversifying across three architectural paradigms, the ensemble mitigates the risk of any single model's failure mode (e.g., the CNN's limited global reasoning, the transformer's data hunger, or the foundation model's sensitivity to distribution shift).
+
+The optimised fusion weights (Table~\ref{tab:ensemble_detailed}) reveal that the ensemble adapts its composition to the characteristics of each fold, assigning higher weights to the best-performing model in each partition. This adaptive behaviour is more sophisticated than a fixed-weight ensemble and contributes to the ensemble's stability.
+
+\section{Clinical Implications}
+\label{sec:clinical}
+
+The QWK values achieved by our system ($\kappa = 0.9178$ for the ensemble) approach the upper bound of inter-grader agreement among trained ophthalmologists (typically $\kappa = 0.65$--$0.85$), suggesting that the system's classification is at least as consistent as expert human grading. The predominance of adjacent-grade misclassifications (Section~\ref{sec:cm_analysis}) further implies that the system's errors are clinically ``safe'' in the sense that they are unlikely to result in catastrophic mismanagement (e.g., referring a healthy patient for urgent laser treatment, or failing to refer a patient with proliferative DR).
+
+For clinical deployment, the system would be most valuable as a \textbf{triage tool} in large-scale screening programmes: rapidly identifying patients with moderate-to-severe DR who require ophthalmologist review, while reducing the workload of manual grading by filtering out the large volume of healthy fundus images.
+
+\section{Limitations}
+\label{sec:limitations}
+
+Several limitations of this study should be acknowledged:
+
+\begin{enumerate}
+    \item \textbf{Single dataset evaluation:} All experiments are conducted on the APTOS 2019 dataset only. Generalisability to other fundus image datasets (e.g., EyePACS, Messidor-2, IDRiD) remains to be validated.
+    
+    \item \textbf{Label noise:} The APTOS dataset contains inherent label noise due to the subjectivity of DR grading. The impact of this noise on model performance and the potential benefits of noise-robust training strategies were not explored.
+    
+    \item \textbf{No comparison with cross-entropy baseline:} While we argue for the superiority of ordinal regression, a direct empirical comparison with standard cross-entropy loss under identical conditions was not included.
+    
+    \item \textbf{Computational requirements:} Despite being GPU-efficient, the combined training of three models across five folds requires substantial cumulative GPU hours ($\sim$37 hours total), which may be prohibitive without access to cloud computing platforms.
+    
+    \item \textbf{Binary referable-DR metric:} Clinical screening programmes often use binary referable/non-referable DR thresholds. While our system provides full 5-class grading, its performance at the clinically critical binary threshold (Grade $\geq 2$) was not separately reported.
+\end{enumerate}

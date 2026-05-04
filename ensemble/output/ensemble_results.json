@@ -1,0 +1,76 @@
+{
+  "fold_results": [
+    {
+      "fold": 0,
+      "weights": {
+        "ModelA_EfficientNetV2S": 0.0,
+        "ModelB_SwinV2T": 0.30000000000000004,
+        "ModelD_RETFound": 0.7
+      },
+      "ensemble_qwk": 0.916771412058721,
+      "individual_qwks": {
+        "ModelA_EfficientNetV2S": 0.9151532706913599,
+        "ModelB_SwinV2T": 0.9144240191024608,
+        "ModelD_RETFound": 0.9230915736712152
+      }
+    },
+    {
+      "fold": 1,
+      "weights": {
+        "ModelA_EfficientNetV2S": 0.7096774193548387,
+        "ModelB_SwinV2T": 0.0,
+        "ModelD_RETFound": 0.29032258064516125
+      },
+      "ensemble_qwk": 0.9218971953208842,
+      "individual_qwks": {
+        "ModelA_EfficientNetV2S": 0.919074492762134,
+        "ModelB_SwinV2T": 0.9085909219110933,
+        "ModelD_RETFound": 0.9066670814975626
+      }
+    },
+    {
+      "fold": 2,
+      "weights": {
+        "ModelA_EfficientNetV2S": 0.09047619047619047,
+        "ModelB_SwinV2T": 0.05,
+        "ModelD_RETFound": 0.8595238095238095
+      },
+      "ensemble_qwk": 0.9253796989897601,
+      "individual_qwks": {
+        "ModelA_EfficientNetV2S": 0.9188954589815719,
+        "ModelB_SwinV2T": 0.9090959500391619,
+        "ModelD_RETFound": 0.9255913372752033
+      }
+    },
+    {
+      "fold": 3,
+      "weights": {
+        "ModelA_EfficientNetV2S": 0.08095238095238096,
+        "ModelB_SwinV2T": 0.15000000000000002,
+        "ModelD_RETFound": 0.769047619047619
+      },
+      "ensemble_qwk": 0.9075512603557132,
+      "individual_qwks": {
+        "ModelA_EfficientNetV2S": 0.904400137745887,
+        "ModelB_SwinV2T": 0.8986970214309971,
+        "ModelD_RETFound": 0.9081410084703223
+      }
+    },
+    {
+      "fold": 4,
+      "weights": {
+        "ModelA_EfficientNetV2S": 0.0,
+        "ModelB_SwinV2T": 0.35000000000000003,
+        "ModelD_RETFound": 0.6499999999999999
+      },
+      "ensemble_qwk": 0.9172212853850068,
+      "individual_qwks": {
+        "ModelA_EfficientNetV2S": 0.9006999155155953,
+        "ModelB_SwinV2T": 0.9063676599142352,
+        "ModelD_RETFound": 0.9181787851759051
+      }
+    }
+  ],
+  "mean_qwk": 0.9177641704220172,
+  "std_qwk": 0.006011023133119371
+}

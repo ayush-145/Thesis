@@ -1,0 +1,309 @@
+\chapter{Results and Analysis}
+\label{ch:results}
+
+This chapter presents the experimental results of the three individual models and the heterogeneous ensemble, followed by a detailed analysis of the per-fold metrics, confusion matrices, and latent space visualisations.
+
+\section{Individual Model Performance}
+\label{sec:individual_results}
+
+Table~\ref{tab:per_fold_qwk} reports the Quadratic Weighted Kappa (QWK) and accuracy for each model across all five cross-validation folds.
+
+\begin{table}[htbp]
+\centering
+\caption{Per-fold QWK and accuracy for all three models across 5-fold cross-validation.}
+\label{tab:per_fold_qwk}
+\begin{tabular}{clccccc}
+\toprule
+\textbf{Model} & \textbf{Metric} & \textbf{Fold 1} & \textbf{Fold 2} & \textbf{Fold 3} & \textbf{Fold 4} & \textbf{Fold 5} \\
+\midrule
+\multirow{2}{*}{EfficientNetV2-S}
+  & QWK      & 0.9152 & 0.9191 & 0.9189 & 0.9044 & 0.9007 \\
+  & Accuracy & 0.8145 & 0.8417 & 0.8224 & 0.8210 & 0.8210 \\
+\midrule
+\multirow{2}{*}{Swin-V2-Tiny}
+  & QWK      & 0.9144 & 0.9086 & 0.9091 & 0.8987 & 0.9064 \\
+  & Accuracy & 0.8240 & 0.8336 & 0.8333 & 0.8101 & 0.8333 \\
+\midrule
+\multirow{2}{*}{RETFound + LoRA}
+  & QWK      & 0.9231 & 0.9067 & 0.9256 & 0.9081 & 0.9182 \\
+  & Accuracy & 0.8513 & 0.8404 & 0.8470 & 0.8197 & 0.8415 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Summary Statistics}
+
+Table~\ref{tab:summary_stats} presents the mean and standard deviation of QWK and accuracy across all folds, along with the approximate total training time.
+
+\begin{table}[htbp]
+\centering
+\caption{Summary statistics for all models and the ensemble (5-fold CV).}
+\label{tab:summary_stats}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Mean QWK} & \textbf{Std QWK} & \textbf{Mean Accuracy} & \textbf{Training Time} \\
+\midrule
+EfficientNetV2-S    & 0.9116 & $\pm$0.0076 & 0.8241 & $\sim$11 hrs \\
+Swin-V2-Tiny        & 0.9074 & $\pm$0.0051 & 0.8269 & $\sim$15 hrs \\
+RETFound + LoRA     & 0.9163 & $\pm$0.0077 & 0.8400 & $\sim$11 hrs \\
+\midrule
+\textbf{Ensemble}   & \textbf{0.9178} & $\pm$\textbf{0.0060} & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Several key observations emerge from these results:
+
+\begin{enumerate}
+    \item \textbf{RETFound achieves the highest individual QWK} ($0.9163 \pm 0.0077$), demonstrating the value of domain-specific pretraining on 1.6 million retinal images. Notably, this performance is achieved with only $\sim$1.2 million trainable parameters (0.4\% of the total), compared to $\sim$21 million and $\sim$28 million for the fully fine-tuned EfficientNetV2-S and Swin-V2-T respectively.
+    
+    \item \textbf{EfficientNetV2-S outperforms Swin-V2-Tiny} ($0.9116$ vs.\ $0.9074$), suggesting that on this relatively small dataset, the CNN's inductive biases (locality, translation equivariance) provide an advantage over the transformer's more flexible but data-hungry attention mechanism.
+    
+    \item \textbf{Swin-V2-Tiny exhibits the lowest variance} ($\pm 0.0051$), indicating the most stable performance across folds. This stability may be attributed to the stronger regularisation applied (weight decay $0.05$, dropout $0.20$) and the shifted-window attention's inherent spatial regularisation.
+    
+    \item \textbf{All three models exceed $\kappa = 0.90$}, which is well above the ``almost perfect agreement'' threshold ($\kappa > 0.80$), confirming the effectiveness of the ordinal regression framework.
+\end{enumerate}
+
+\section{Ensemble Results}
+\label{sec:ensemble_results}
+
+Table~\ref{tab:ensemble_detailed} presents the per-fold ensemble results, including the optimised fusion weights for each fold.
+
+\begin{table}[htbp]
+\centering
+\caption{Per-fold ensemble QWK and optimised fusion weights.}
+\label{tab:ensemble_detailed}
+\begin{tabular}{cccccc}
+\toprule
+\textbf{Fold} & \textbf{$w_A$} & \textbf{$w_B$} & \textbf{$w_D$} & \textbf{Ensemble QWK} & \textbf{Best Individual} \\
+\midrule
+1 & 0.000 & 0.300 & 0.700 & 0.9168 & 0.9231 (D) \\
+2 & 0.710 & 0.000 & 0.290 & 0.9219 & 0.9191 (A) \\
+3 & 0.090 & 0.050 & 0.860 & 0.9254 & 0.9256 (D) \\
+4 & 0.081 & 0.150 & 0.769 & 0.9076 & 0.9081 (D) \\
+5 & 0.000 & 0.350 & 0.650 & 0.9172 & 0.9182 (D) \\
+\midrule
+\multicolumn{4}{c}{\textbf{Mean}} & \textbf{0.9178} & 0.9163 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The ensemble achieves a mean QWK of $\mathbf{0.9178 \pm 0.0060}$, surpassing the best individual model (RETFound, $0.9163$) by $+0.0015$ in mean QWK. While this improvement is modest in absolute terms, the ensemble also reduces the standard deviation from $0.0077$ to $0.0060$, demonstrating improved stability.
+
+\subsection{Analysis of Fusion Weights}
+
+The optimised fusion weights reveal several noteworthy patterns:
+
+\begin{itemize}
+    \item \textbf{RETFound dominates the ensemble} with a mean weight of $\bar{w}_D \approx 0.65$ across folds, consistent with its superior individual performance. In three out of five folds, RETFound receives a weight exceeding 0.65.
+    
+    \item \textbf{EfficientNetV2-S and Swin-V2-T contribute complementarily.} In Fold~2, where EfficientNetV2-S achieves its best individual QWK (0.9191), it receives the highest weight (0.710) while Swin-V2-T is effectively excluded ($w_B = 0$). Conversely, in Folds~1 and~5, EfficientNetV2-S is excluded ($w_A = 0$) while Swin-V2-T contributes with weights of 0.30--0.35.
+    
+    \item \textbf{The weight patterns are consistent with the model correlation analysis.} The fact that the ensemble frequently assigns zero weight to one of the two non-foundation models suggests that EfficientNetV2-S and Swin-V2-T capture partially redundant information, while RETFound provides a distinct representation that is consistently valuable.
+\end{itemize}
+
+\section{Confusion Matrix Analysis}
+\label{sec:cm_analysis}
+
+The normalised confusion matrices generated for each model and fold provide detailed insight into the per-class classification behaviour. Figure~\ref{fig:confusion_matrices} presents the confusion matrices for Fold~1 for the RETFound foundation model and the final ensemble.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelD_fold1_cm.pdf}
+        \caption{RETFound + LoRA}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{ensemble_fold1_cm.pdf}
+        \caption{Ensemble}
+    \end{subfigure}
+    \caption{Normalised confusion matrices for Fold~1. Rows represent true grades, columns represent predicted grades. Values indicate the proportion of samples in each true class assigned to each predicted class.}
+    \label{fig:confusion_matrices}
+\end{figure}
+
+Across all models and folds, the confusion matrices exhibit consistent patterns:
+
+\begin{enumerate}
+    \item \textbf{Grade 0 (No DR) is classified most accurately}, with recall typically exceeding 90\%. This is expected given the large representation of Grade~0 in the training set and the distinctiveness of a healthy fundus.
+    
+    \item \textbf{Grade 1 (Mild NPDR) is the most frequently misclassified grade}, with substantial confusion between Grades~0 and~2. This reflects the clinical reality that mild NPDR---characterised by a small number of microaneurysms---is the most subtle and subjective grade to distinguish.
+    
+    \item \textbf{Grade 4 (Proliferative DR) achieves high recall} despite being a minority class, likely because proliferative changes (neovascularisation, vitreous haemorrhage) produce visually dramatic pathology that is readily distinguishable.
+    
+    \item \textbf{Misclassifications are predominantly between adjacent grades.} The ordinal regression framework successfully minimises distant misclassifications (e.g., Grade~0 misclassified as Grade~4), which would be clinically dangerous. This is a direct consequence of the CORN loss, which trains rank-consistent classifiers.
+\end{enumerate}
+
+\section{ROC and Precision-Recall Analysis}
+\label{sec:roc_pr}
+
+The One-vs-Rest (OvR) ROC and Precision-Recall curves, generated for each fold and model, confirm the discriminative ability of the CORN-based probability estimates. Figure~\ref{fig:roc_curves} shows the ROC curves for all three models on Fold~1.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelA_fold1_roc.pdf}
+        \caption{EfficientNetV2-S}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelB_fold1_roc.pdf}
+        \caption{Swin-V2-Tiny}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelD_fold1_roc.pdf}
+        \caption{RETFound + LoRA}
+    \end{subfigure}
+    \caption{ROC curves (One-vs-Rest) for Fold~1. Each curve represents the binary discrimination between one DR grade and all others. Per-class AUC values are shown in the legends.}
+    \label{fig:roc_curves}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelA_fold1_pr.pdf}
+        \caption{EfficientNetV2-S}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelB_fold1_pr.pdf}
+        \caption{Swin-V2-Tiny}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelD_fold1_pr.pdf}
+        \caption{RETFound + LoRA}
+    \end{subfigure}
+    \caption{Precision-Recall curves (One-vs-Rest) for Fold~1. Average precision (AP) values are shown in the legends for each DR grade.}
+    \label{fig:pr_curves}
+\end{figure}
+
+Across all models, the per-class AUC values consistently exceed 0.90 for Grades~0, 3, and~4, with Grade~1 (Mild NPDR) exhibiting the lowest AUC (typically 0.85--0.90), consistent with the confusion matrix analysis. The Precision-Recall curves show similar trends, with Grade~1 and the minority classes (Grades~3 and~4) exhibiting lower average precision due to the class imbalance.
+
+\section{Training Dynamics}
+\label{sec:training_curves}
+
+Figure~\ref{fig:training_curves} presents the training curves (loss, QWK, and learning rate) for EfficientNetV2-S and RETFound on Fold~1, illustrating the learning dynamics of each architecture.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelA_fold1_curves.pdf}
+        \caption{EfficientNetV2-S}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelD_fold1_curves.pdf}
+        \caption{RETFound + LoRA}
+    \end{subfigure}
+    \caption{Training curves for Fold~1 showing loss convergence, QWK progression, and learning rate schedule. The linear warmup phase is visible in the first few epochs, followed by cosine decay.}
+    \label{fig:training_curves}
+\end{figure}
+
+\section{Latent Space Visualisation}
+\label{sec:latent_space}
+
+UMAP and t-SNE projections of the penultimate feature vectors provide qualitative insight into the learned representations. Figure~\ref{fig:umap} shows the UMAP projections for all three models on Fold~1.
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelA_fold1_umap.pdf}
+        \caption{EfficientNetV2-S}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelB_fold1_umap.pdf}
+        \caption{Swin-V2-Tiny}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelD_fold1_umap.pdf}
+        \caption{RETFound + LoRA}
+    \end{subfigure}
+    \caption{UMAP projections of penultimate feature vectors for Fold~1, coloured by DR grade (0--4). Well-separated clusters indicate that the model has learned discriminative representations for each severity level.}
+    \label{fig:umap}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelA_fold1_tsne.pdf}
+        \caption{EfficientNetV2-S}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelB_fold1_tsne.pdf}
+        \caption{Swin-V2-Tiny}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{modelD_fold1_tsne.pdf}
+        \caption{RETFound + LoRA}
+    \end{subfigure}
+    \caption{t-SNE projections of penultimate feature vectors for Fold~1, coloured by DR grade (0--4). The ordinal structure is visible as adjacent grades form neighbouring clusters.}
+    \label{fig:tsne}
+\end{figure}
+
+The latent space visualisations reveal that:
+\begin{itemize}
+    \item All three models learn well-separated cluster structures corresponding to the five DR grades, confirming effective feature learning.
+    \item RETFound produces the most compact and well-separated clusters, consistent with its superior classification performance.
+    \item The overlap regions between clusters correspond to the adjacent-grade confusion observed in the confusion matrices, particularly between Grades~0/1 and Grades~1/2.
+    \item The ordinal structure is preserved in the latent space: clusters corresponding to adjacent grades are spatially closer than those corresponding to distant grades, reflecting the ordinal nature of the CORN representation.
+\end{itemize}
+
+\section{Comparative Performance Charts}
+\label{sec:comparative_charts}
+
+Figure~\ref{fig:qwk_bar} presents a comparative bar chart of mean QWK scores, and Figure~\ref{fig:qwk_box} shows the stability analysis through box plots of QWK distributions across the five folds.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.75\textwidth]{comparative_qwk_bar.pdf}
+    \caption{Comparative bar chart of mean QWK across 5-fold cross-validation for all models and the ensemble. Error bars represent $\pm 1$ standard deviation. The ensemble achieves the highest mean QWK.}
+    \label{fig:qwk_bar}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.75\textwidth]{comparative_qwk_box.pdf}
+    \caption{Box plot showing the distribution of QWK scores across 5 folds for each model and the ensemble. Swin-V2-Tiny exhibits the narrowest interquartile range (most stable), while the ensemble combines high mean performance with reduced variance.}
+    \label{fig:qwk_box}
+\end{figure}
+
+\section{Model Prediction Correlation}
+\label{sec:correlation}
+
+To assess the diversity of the three models' predictions---a prerequisite for effective ensemble fusion---we compute the pairwise Spearman rank correlation between model predictions on the Fold~1 validation set (Figure~\ref{fig:correlation}).
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.6\textwidth]{model_correlation_heatmap.pdf}
+    \caption{Spearman rank correlation matrix between the predictions of the three models on Fold~1. Lower correlation indicates greater prediction diversity, which benefits ensemble fusion. RETFound shows the lowest average correlation with the other models.}
+    \label{fig:correlation}
+\end{figure}
+
+The correlation analysis reveals moderate-to-high correlation between the models (typically $\rho = 0.85$--$0.92$), with RETFound showing the lowest average correlation with the other two models. This lower correlation confirms that the foundation model's representations, learned from domain-specific pretraining, capture aspects of retinal pathology that are distinct from those learned by ImageNet-pretrained CNN and transformer architectures. This diversity is precisely what enables the ensemble to improve upon the best individual model.
+
+\section{Ablation Study}
+\label{sec:model_c}
+
+An additional architecture, designated Model~C, was initially explored as a CNN--Transformer hybrid that combined a CNN backbone for local feature extraction with a Transformer encoder for global reasoning. However, this architecture exhibited severe training stagnation during fine-tuning on the APTOS dataset, with QWK remaining near zero despite extensive hyperparameter search. The failure was attributed to the difficulty of simultaneously training randomly initialised Transformer layers and pretrained CNN backbone under the same learning rate, leading to catastrophic destruction of the pretrained features before the Transformer layers could converge. While differential learning rates partially mitigated this issue, the hybrid model's performance remained substantially below the other three architectures, and it was excluded from the final comparative analysis. This negative result underscores the challenges of training hybrid architectures on small datasets without careful stage-wise training protocols.
