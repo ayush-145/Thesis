@@ -216,15 +216,14 @@ May 2026
 % Table of contents and lists
 \clearpage
 \begingroup
-\let\clearpage\relax
-\let\cleardoublepage\relax
+\pagestyle{plain}
+
 \phantomsection
 \addcontentsline{toc}{chapter}{\contentsname}
 \tableofcontents
 
-\renewcommand{\thispagestyle}[1]{} % Prevent LOF/LOT from changing the page style
 \makeatletter
-\renewcommand{\@mkboth}[2]{} % Prevent LOF/LOT from changing the header name
+\renewcommand{\@mkboth}[2]{}
 \makeatother
 
 \setlength{\cftbeforeloftitleskip}{20pt}
@@ -232,15 +231,18 @@ May 2026
 \setlength{\cftbeforelottitleskip}{20pt}
 \setlength{\cftafterlottitleskip}{20pt}
 
+\clearpage
 \phantomsection
 \addcontentsline{toc}{chapter}{\listfigurename}
 \listoffigures
 
+\clearpage
 \phantomsection
 \addcontentsline{toc}{chapter}{\listtablename}
 \listoftables
 \endgroup
 
+\pagestyle{fancy}
 
 \let\origcleardoublepage\cleardoublepage
 \let\cleardoublepage\clearpage
